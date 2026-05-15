@@ -1,18 +1,15 @@
-
 import requests
 import os
-import fitz  # pymupdf
+import fitz
 from dotenv import load_dotenv
 
 load_dotenv()
 
-print("Key loaded:", os.getenv("COMPANIES_HOUSE_API_KEY"))
-
 API_KEY = os.getenv("COMPANIES_HOUSE_API_KEY")
 BASE_URL = "https://api.company-information.service.gov.uk"
 
-
 def search_company(query):
+    query = query.strip()[:100]
     url = f"{BASE_URL}/search/companies"
     response = requests.get(url, params={"q": query}, auth=(API_KEY, ""))
     response.raise_for_status()
@@ -23,7 +20,6 @@ def get_filing_history(company_number):
     response = requests.get(url, auth=(API_KEY, ""))
     response.raise_for_status()
     return response.json()
-
 
 def get_document(filing):
     links = filing.get("links", {})
@@ -51,7 +47,12 @@ def get_document_text(doc_metadata):
 if __name__ == "__main__":
     results = search_company("Tesco")
     company = results["items"][0]
+    print(company["title"], "-", company["company_number"])
+
     filings = get_filing_history(company["company_number"])
+    for filing in filings["items"][:5]:
+        print(filing["date"], "-", filing["description"])
+
     first_filing = filings["items"][0]
     doc = get_document(first_filing)
     text = get_document_text(doc)
