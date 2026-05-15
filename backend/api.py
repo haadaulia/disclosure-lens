@@ -43,7 +43,7 @@ async def analyse(request: Request, q: str = Query(..., max_length=100)):
 
     # Get last 3 filings
     filings_data = get_filing_history(company_number)
-    items = filings_data.get("items", [])[:3]
+    items = filings_data.get("items", [])[:5]
 
     filings = []
     for filing in items:
@@ -52,11 +52,23 @@ async def analyse(request: Request, q: str = Query(..., max_length=100)):
             if not doc:
                 continue
             text = get_document_text(doc)
+
+            # Skip if text too short to summarise reliably
+            if len(text.strip()) < 200:
+                filings.append({
+                    "date": filing.get("date", ""),
+                    "description": filing.get("description", ""),
+                    "summary": "Insufficient text extracted from this filing to generate a reliable summary.",
+                    "warning": True
+                })
+                continue
+
             summary = summarise_filing(text, company_name)
             filings.append({
                 "date": filing.get("date", ""),
                 "description": filing.get("description", ""),
-                "summary": summary
+                "summary": summary,
+                "warning": False
             })
         except Exception:
             continue

@@ -29,7 +29,9 @@ When analysing a filing, produce a structured market brief covering:
 5. RISK FLAGS - Any governance concerns, unusual patterns, or points requiring further diligence
 6. ANALYST NOTE - A one or two sentence plain-English takeaway for an investor reviewing this company
 
-Be precise and factual. Do not speculate beyond what the filing contains. Use professional financial language appropriate for an institutional audience. Avoid generic statements."""
+Be precise and factual. Do not speculate beyond what the filing contains. Use professional financial language appropriate for an institutional audience. Avoid generic statements.
+If the filing text is too brief or lacks specific detail, state clearly what is and is not known. Never invent names, figures, or facts not present in the filing text."""
+
             },
             {
                 "role": "user",
