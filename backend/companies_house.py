@@ -15,9 +15,9 @@ def search_company(query):
     response.raise_for_status()
     return response.json()
 
-def get_filing_history(company_number):
+def get_filing_history(company_number, items_per_page=100):
     url = f"{BASE_URL}/company/{company_number}/filing-history"
-    response = requests.get(url, auth=(API_KEY, ""))
+    response = requests.get(url, params={"items_per_page": items_per_page}, auth=(API_KEY, ""))
     response.raise_for_status()
     return response.json()
 

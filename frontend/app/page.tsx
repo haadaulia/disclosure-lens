@@ -1,18 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import "./globals.css";
+
+interface Company {
+  title: string;
+  company_number: string;
+  company_status: string;
+  company_type: string;
+  date_of_creation: string;
+  address: string;
+}
 
 interface Filing {
   date: string;
   description: string;
+  category: string;
+  type: string;
   summary: string;
   warning?: boolean;
 }
 
-interface Result {
+interface FilingsResult {
   company: string;
   company_number: string;
   filings: Filing[];
+}
+
+interface AnnualReport {
+  found: boolean;
+  date?: string;
+  type?: string;
+  summary?: string | null;
+  warning?: boolean;
+  message?: string;
+  company_number?: string;
 }
 
 const SLUG_MAP: Record<string, string> = {
@@ -27,6 +49,17 @@ const SLUG_MAP: Record<string, string> = {
   "mortgage-satisfy-charge-full": "Mortgage Charge Satisfied",
 };
 
+const CATEGORY_LABELS: Record<string, string> = {
+  officers: "Officers",
+  "capital-and-shareholders": "Capital",
+  accounts: "Accounts",
+  "confirmation-statement": "Confirmation",
+  address: "Address",
+  mortgage: "Charges",
+  "persons-with-significant-control": "PSC",
+  "annual-return": "Annual Return",
+};
+
 function formatSlug(slug: string): string {
   if (SLUG_MAP[slug]) return SLUG_MAP[slug];
   return slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).trim();
@@ -38,48 +71,60 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
+function formatCompanyType(type: string): string {
+  const map: Record<string, string> = {
+    plc: "Public Limited Company",
+    ltd: "Private Limited Company",
+    llp: "Limited Liability Partnership",
+    "private-limited-company": "Private Limited",
+    "public-limited-company": "Public Limited",
+  };
+  return map[type] || type.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function renderMarkdown(text: string) {
   if (!text) return null;
-  const lines = text.split("\n");
-  return lines.map((line, i) => {
-    // Section header **ALL CAPS**
+
+  return text.split("\n").map((line, i) => {
     if (/^\*\*[A-Z0-9\s\.\-\/]+\*\*$/.test(line.trim())) {
       const clean = line.replace(/\*\*/g, "");
       return (
-        <div key={i} style={{ marginTop: i === 0 ? 0 : "20px", marginBottom: "6px" }}>
-          <span style={{ fontSize: "10px", letterSpacing: "0.25em", fontWeight: 600, color: "#d97706", textTransform: "uppercase" }}>{clean}</span>
+        <div key={i} style={{ marginTop: i === 0 ? 0 : "22px", marginBottom: "8px" }}>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "9px", letterSpacing: "0.25em", fontWeight: 600, color: "var(--accent)", textTransform: "uppercase" as const }}>
+            {clean}
+          </span>
         </div>
       );
     }
-    // Bullet with bold label
-    if (/^- \*\*.+\*\*:/.test(line)) {
-      const match = line.match(/^- \*\*(.+?)\*\*:\s*(.*)/);
+
+    if (/^[-*] \*\*.+\*\*:/.test(line)) {
+      const match = line.match(/^[-*] \*\*(.+?)\*\*:\s*(.*)/);
       if (match) {
         return (
-          <div key={i} style={{ display: "flex", gap: "8px", marginBottom: "6px", fontSize: "13px" }}>
-            <span style={{ color: "#444", flexShrink: 0 }}>·</span>
+          <div key={i} style={{ display: "flex", gap: "10px", marginBottom: "7px", fontSize: "13px", fontFamily: "'Inter', system-ui, sans-serif" }}>
+            <span style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: "1px" }}>·</span>
             <span>
-              <span style={{ color: "#bbb", fontWeight: 500 }}>{match[1]}: </span>
-              <span style={{ color: "#666" }}>{match[2].replace(/\*\*/g, "")}</span>
+              <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{match[1]}: </span>
+              <span style={{ color: "var(--text-tertiary)" }}>{match[2].replace(/\*\*/g, "")}</span>
             </span>
           </div>
         );
       }
     }
-    // Plain bullet
-    if (line.startsWith("- ")) {
+
+    if (line.startsWith("- ") || line.startsWith("* ")) {
       return (
-        <div key={i} style={{ display: "flex", gap: "8px", marginBottom: "6px", fontSize: "13px" }}>
-          <span style={{ color: "#444", flexShrink: 0 }}>·</span>
-          <span style={{ color: "#666" }}>{line.slice(2).replace(/\*\*/g, "")}</span>
+        <div key={i} style={{ display: "flex", gap: "10px", marginBottom: "7px", fontSize: "13px", fontFamily: "'Inter', system-ui, sans-serif" }}>
+          <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>·</span>
+          <span style={{ color: "var(--text-tertiary)" }}>{line.slice(2).replace(/\*\*/g, "")}</span>
         </div>
       );
     }
-    // Empty line
-    if (line.trim() === "") return <div key={i} style={{ height: "4px" }} />;
-    // Default
+
+    if (line.trim() === "") return <div key={i} style={{ height: "5px" }} />;
+
     return (
-      <p key={i} style={{ fontSize: "13px", color: "#666", margin: "0 0 6px 0" }}>
+      <p key={i} style={{ fontSize: "13px", color: "var(--text-tertiary)", margin: "0 0 7px 0", fontFamily: "'Inter', system-ui, sans-serif", lineHeight: 1.7 }}>
         {line.replace(/\*\*/g, "")}
       </p>
     );
@@ -87,244 +132,396 @@ function renderMarkdown(text: string) {
 }
 
 export default function Home() {
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [companies, setCompanies] = useState<Company[] | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [count, setCount] = useState(5);
+  const [activeCategory, setActiveCategory] = useState("all");
+
+  const [filingsResult, setFilingsResult] = useState<FilingsResult | null>(null);
+  const [annualReport, setAnnualReport] = useState<AnnualReport | null>(null);
+  const [loadingFilings, setLoadingFilings] = useState(false);
+  const [loadingAR, setLoadingAR] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   async function handleSearch() {
     if (!query.trim()) return;
-    setLoading(true);
+    setSearching(true);
     setError("");
-    setResult(null);
+    setCompanies(null);
+    setSelectedCompany(null);
+    setFilingsResult(null);
+    setAnnualReport(null);
     try {
-      const res = await fetch(`/api/analyse?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
-      setResult(data);
+      setCompanies(data.companies || []);
     } catch {
-      setError("Could not retrieve filings. Check the company name and try again.");
+      setError("Search failed. Please try again.");
     } finally {
-      setLoading(false);
+      setSearching(false);
     }
   }
 
+  async function handleSelectCompany(company: Company) {
+    setSelectedCompany(company);
+    setCompanies(null);
+    setFilingsResult(null);
+    setAnnualReport(null);
+    setActiveCategory("all");
+    setError("");
+
+    setLoadingFilings(true);
+    setLoadingAR(true);
+
+    fetch(`/api/filings?company_number=${encodeURIComponent(company.company_number)}&company_name=${encodeURIComponent(company.title)}&count=${count}`)
+      .then(r => r.json())
+      .then(data => setFilingsResult(data))
+      .catch(() => setError("Could not retrieve filings."))
+      .finally(() => setLoadingFilings(false));
+
+    fetch(`/api/annual-report?company_number=${encodeURIComponent(company.company_number)}&company_name=${encodeURIComponent(company.title)}`)
+      .then(r => r.json())
+      .then(data => setAnnualReport(data))
+      .catch(() => {})
+      .finally(() => setLoadingAR(false));
+  }
+
+  function handleReset() {
+    setQuery("");
+    setCompanies(null);
+    setSelectedCompany(null);
+    setFilingsResult(null);
+    setAnnualReport(null);
+    setError("");
+  }
+
+  const categories = filingsResult
+    ? ["all", ...Array.from(new Set(filingsResult.filings.map(f => f.category).filter(Boolean)))]
+    : [];
+
+  const filteredFilings = filingsResult?.filings.filter(
+    f => activeCategory === "all" || f.category === activeCategory
+  ) || [];
+
+  const isIdle = !companies && !selectedCompany && !loadingFilings && !loadingAR;
+
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap');
-        * { box-sizing: border-box; }
-        body { background: #0c0c0c; margin: 0; }
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulseDot {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.15; }
-        }
-        .fade-up { animation: fadeUp 0.5s ease forwards; }
-        .fade-up-1 { animation: fadeUp 0.5s ease 0.1s forwards; opacity: 0; }
-        .fade-up-2 { animation: fadeUp 0.5s ease 0.2s forwards; opacity: 0; }
-        .pulse { animation: pulseDot 1.2s ease infinite; }
-        .search-input {
-          background: transparent;
-          border: none;
-          border-bottom: 1px solid #1e1e1e;
-          color: #e5e5e5;
-          font-family: 'DM Mono', monospace;
-          font-size: 15px;
-          padding: 14px 0;
-          width: 100%;
-          transition: border-color 0.2s;
-        }
-        .search-input:focus { outline: none; border-bottom-color: #d97706; }
-        .search-input::placeholder { color: #2e2e2e; }
-        .filing-card { border-left: 1px solid #1a1a1a; transition: border-left-color 0.25s; padding-left: 20px; }
-        .filing-card:hover { border-left-color: #d97706; }
-        .analyse-btn {
-          background: #d97706;
-          color: #0c0c0c;
-          border: none;
-          padding: 14px 28px;
-          font-size: 11px;
-          letter-spacing: 0.15em;
-          text-transform: uppercase;
-          font-weight: 700;
-          cursor: pointer;
-          font-family: 'DM Mono', monospace;
-          transition: background 0.15s;
-          white-space: nowrap;
-        }
-        .analyse-btn:hover { background: #f59e0b; }
-        .analyse-btn:disabled { background: #1a1a1a; color: #333; cursor: not-allowed; }
-      `}</style>
+    <main style={{ background: "var(--bg)", color: "var(--text-primary)", minHeight: "100vh", fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <header style={{ borderBottom: "1px solid var(--border)", padding: "16px 40px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface)" }}>
+        <div
+          style={{ display: "flex", alignItems: "baseline", gap: "14px", cursor: "pointer" }}
+          onClick={handleReset}
+        >
+          <span style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: "19px", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
+            DisclosureLens
+          </span>
+          <span className="label" style={{ color: "var(--text-muted)" }}>UK Regulatory Intelligence</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          <span className="label" style={{ color: "var(--text-muted)" }}>Companies House · Live</span>
+          <span className="tag">BETA</span>
+          <button
+            onClick={() => setTheme(t => t === "light" ? "dark" : "light")}
+            style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--text-tertiary)", padding: "5px 10px", cursor: "pointer", fontFamily: "'DM Mono', monospace", fontSize: "10px", borderRadius: "2px", letterSpacing: "0.1em" }}
+          >
+            {theme === "light" ? "DARK" : "LIGHT"}
+          </button>
+        </div>
+      </header>
 
-      <main style={{ background: "#0c0c0c", color: "#e5e5e5", minHeight: "100vh", fontFamily: "'DM Mono', monospace" }}>
-
-        {/* Header */}
-        <header style={{ borderBottom: "1px solid #141414", padding: "18px 40px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "14px" }}>
-            <span style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: "18px", letterSpacing: "-0.02em", color: "#e5e5e5" }}>
-              DisclosureLens
-            </span>
-            <span style={{ fontSize: "9px", letterSpacing: "0.25em", color: "#2a2a2a", textTransform: "uppercase" }}>
-              UK Regulatory Intelligence
-            </span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-            <span style={{ fontSize: "9px", letterSpacing: "0.15em", color: "#252525", textTransform: "uppercase" }}>
-              Companies House · Live Register
-            </span>
-            <span style={{ fontSize: "9px", border: "1px solid #1a1a1a", padding: "3px 8px", color: "#252525", letterSpacing: "0.1em" }}>
-              BETA
-            </span>
-          </div>
-        </header>
-
-        <div style={{ maxWidth: "740px", margin: "0 auto", padding: "72px 40px 100px" }}>
-
-          {/* Hero */}
-          <div className="fade-up" style={{ marginBottom: "60px" }}>
-            <h1 style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: "clamp(34px, 5vw, 54px)", lineHeight: 1.05, letterSpacing: "-0.025em", color: "#e5e5e5", margin: "0 0 18px 0", fontWeight: 400 }}>
+      <div className="page-wrap">
+        {isIdle && (
+          <div className="fade-up" style={{ marginBottom: "56px" }}>
+            <h1 style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: "clamp(36px, 5vw, 58px)", lineHeight: 1.05, letterSpacing: "-0.025em", color: "var(--text-primary)", margin: "0 0 20px 0", fontWeight: 400 }}>
               UK company filings,<br />
-              <em style={{ color: "#555" }}>decoded.</em>
+              <em style={{ color: "var(--text-muted)", fontStyle: "italic" }}>decoded.</em>
             </h1>
-            <p style={{ fontSize: "12px", color: "#3a3a3a", letterSpacing: "0.08em", lineHeight: 1.7, margin: 0 }}>
-              Live Companies House data · AI-powered analyst briefs · Any UK registered company
+            <p style={{ fontSize: "13px", color: "var(--text-tertiary)", lineHeight: 1.7, margin: 0, maxWidth: "480px" }}>
+              Live Companies House data. AI-powered analyst briefs. Any UK registered company — from FTSE 100 to private limited.
             </p>
           </div>
+        )}
 
-          {/* Search bar */}
-          <div className="fade-up-1" style={{ marginBottom: "72px" }}>
-            <label style={{ fontSize: "9px", letterSpacing: "0.25em", color: "#2e2e2e", textTransform: "uppercase", display: "block", marginBottom: "10px" }}>
-              Company name
-            </label>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: "16px" }}>
-              <input
-                className="search-input"
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                placeholder="e.g. Tesco, Barclays, BP, Rolls-Royce"
-              />
-              <button className="analyse-btn" onClick={handleSearch} disabled={loading}>
-                {loading ? "Fetching…" : "Analyse →"}
-              </button>
-            </div>
+        <div className="fade-up-1" style={{ marginBottom: "48px" }}>
+          <label className="label" style={{ display: "block", marginBottom: "10px" }}>Company name</label>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "14px" }}>
+            <input
+              className="search-input"
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSearch()}
+              placeholder="e.g. Tesco, Barclays, BP, Rolls-Royce"
+            />
+            <button className="btn-primary" onClick={handleSearch} disabled={searching || loadingFilings}>
+              {searching ? "Searching…" : "Search →"}
+            </button>
           </div>
 
-          {/* Loading */}
-          {loading && (
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0 32px" }}>
-              <span className="pulse" style={{ width: "5px", height: "5px", borderRadius: "50%", background: "#d97706", display: "inline-block", flexShrink: 0 }} />
-              <span style={{ fontSize: "10px", letterSpacing: "0.2em", color: "#333", textTransform: "uppercase" }}>
-                Retrieving filings from Companies House…
-              </span>
-            </div>
-          )}
-
-          {/* Error */}
-          {error && (
-            <div style={{ borderLeft: "2px solid #7f1d1d", padding: "12px 16px", background: "#0d0404", fontSize: "12px", color: "#ef4444", marginBottom: "24px" }}>
-              {error}
-            </div>
-          )}
-
-          {/* Results */}
-          {result && (
-            <div className="fade-up">
-              {/* Company title */}
-              <div style={{ marginBottom: "48px", paddingBottom: "32px", borderBottom: "1px solid #141414" }}>
-                <div style={{ fontSize: "9px", letterSpacing: "0.25em", color: "#333", textTransform: "uppercase", marginBottom: "10px" }}>
-                  Registered company
-                </div>
-                <h2 style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: "clamp(24px, 4vw, 38px)", fontWeight: 400, letterSpacing: "-0.015em", color: "#e5e5e5", margin: "0 0 10px 0" }}>
-                  {result.company}
-                </h2>
-                <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
-<span style={{ fontSize: "11px", color: "#2e2e2e", letterSpacing: "0.1em" }}>
-  CH No. {result.company_number}
-</span>
-                  <span style={{ color: "#222" }}>·</span>
-                  <span style={{ fontSize: "10px", letterSpacing: "0.15em", color: "#252525", textTransform: "uppercase" }}>
-                    {result.filings.length} filing{result.filings.length !== 1 ? "s" : ""} analysed
-                  </span>
-                </div>
-              </div>
-
-              {/* Filing cards */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "36px" }}>
-                {result.filings.map((filing, i) => (
-                  <div
-                    key={i}
-                    className="filing-card"
-                    style={{ opacity: 0, animation: `fadeUp 0.5s ease ${0.1 + i * 0.12}s forwards` }}
-                  >
-                    {/* Filing header */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                      <div>
-                        <div style={{ fontSize: "9px", letterSpacing: "0.2em", color: "#333", textTransform: "uppercase", marginBottom: "5px" }}>
-                          Filing {i + 1}
-                        </div>
-                        <div style={{ fontSize: "13px", color: "#777", fontWeight: 500, lineHeight: 1.4 }}>
-                          {formatSlug(filing.description)}
-                        </div>
-                      </div>
-                      <div style={{ flexShrink: 0, marginLeft: "20px", textAlign: "right" }}>
-                        <span style={{ fontSize: "11px", color: "#2e2e2e", letterSpacing: "0.05em" }}>
-                          {formatDate(filing.date)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Content */}
-{filing.warning ? (
-  <div style={{ padding: "14px 16px", background: "#0f0f0f", border: "1px solid #1a1a1a", fontSize: "11px", color: "#444", letterSpacing: "0.05em", lineHeight: 1.8 }}>
-    <div style={{ color: "#555", marginBottom: "4px" }}>
-      This filing contains limited extractable text — typically a short statutory form or table-based document.
-    </div>
-<div style={{ color: "#2e2e2e" }}>
-  View the full document on the{" "}
-  <a
-    href={`https://find-and-update.company-information.service.gov.uk/company/${result.company_number}/filing-history`}
-    target="_blank"
-    rel="noopener noreferrer"
-    style={{ color: "#d97706", textDecoration: "none" }}
-  >
-    Companies House register →
-  </a>
-</div>
-  </div>
-) : (
-                      <div style={{ background: "#0f0f0f", border: "1px solid #161616", padding: "22px 24px", lineHeight: 1.7 }}>
-                        {renderMarkdown(filing.summary)}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Empty state */}
-          {!loading && !result && !error && (
-            <div className="fade-up-2" style={{ border: "1px dashed #161616", padding: "56px 40px", textAlign: "center" }}>
-              <div style={{ fontSize: "9px", letterSpacing: "0.25em", color: "#222", textTransform: "uppercase", lineHeight: 2.2 }}>
-                Enter any UK registered company name<br />
-                to retrieve and analyse its latest filings
-              </div>
+          {!selectedCompany && (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "14px", flexWrap: "wrap" }}>
+              <span className="label" style={{ marginRight: "4px" }}>Filings to retrieve:</span>
+              {[3, 5, 10].map(n => (
+                <button key={n} className={`btn-count${count === n ? " active" : ""}`} onClick={() => setCount(n)}>{n}</button>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <footer style={{ borderTop: "1px solid #111", padding: "20px 40px", display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontSize: "9px", color: "#1e1e1e", letterSpacing: "0.15em" }}>DISCLOSURELENS</span>
-          <span style={{ fontSize: "9px", color: "#1e1e1e", letterSpacing: "0.15em" }}>POWERED BY COMPANIES HOUSE API</span>
-        </footer>
-      </main>
-    </>
+        {searching && (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "24px" }}>
+            <span className="pulse" style={{ width: "5px", height: "5px", borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />
+            <span className="label">Searching Companies House…</span>
+          </div>
+        )}
+
+        {companies && companies.length > 0 && (
+          <div className="fade-up" style={{ marginBottom: "32px" }}>
+            <p className="label" style={{ marginBottom: "14px" }}>
+              {companies.length} result{companies.length !== 1 ? "s" : ""} — select a company
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {companies.map((company, i) => (
+                <div key={i} className="company-row" onClick={() => handleSelectCompany(company)}>
+                  <div>
+                    <div style={{ fontSize: "14px", fontWeight: 500, color: "var(--text-primary)", marginBottom: "5px" }}>
+                      {company.title}
+                    </div>
+                    <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px", color: "var(--text-muted)", letterSpacing: "0.08em" }}>
+                        #{company.company_number}
+                      </span>
+                      {company.company_status && (
+                        <span className={company.company_status === "active" ? "status-active" : "status-dissolved"}
+                          style={{ fontFamily: "'DM Mono', monospace", fontSize: "9px", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                          {company.company_status}
+                        </span>
+                      )}
+                      {company.address && (
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{company.address}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    {company.company_type && (
+                      <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "3px" }}>
+                        {formatCompanyType(company.company_type)}
+                      </div>
+                    )}
+                    {company.date_of_creation && (
+                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px", color: "var(--text-muted)" }}>
+                        Est. {new Date(company.date_of_creation).getFullYear()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {companies && companies.length === 0 && (
+          <p style={{ fontSize: "13px", color: "var(--text-muted)", padding: "8px 0" }}>No companies found.</p>
+        )}
+
+        {error && (
+          <div style={{ borderLeft: "3px solid #dc2626", padding: "12px 16px", background: "rgba(220,38,38,0.05)", fontSize: "12px", color: "#dc2626", marginBottom: "24px", borderRadius: "2px" }}>
+            {error}
+          </div>
+        )}
+
+        {selectedCompany && (
+          <div style={{ marginBottom: "40px", paddingBottom: "28px", borderBottom: "1px solid var(--border)" }}>
+            <div className="label" style={{ marginBottom: "10px" }}>Registered company</div>
+            <h2 style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: "clamp(26px, 4vw, 40px)", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--text-primary)", margin: "0 0 12px 0" }}>
+              {selectedCompany.title}
+            </h2>
+            <div style={{ display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "11px", color: "var(--text-muted)" }}>
+                CH No. {selectedCompany.company_number}
+              </span>
+              <span style={{ color: "var(--border)" }}>·</span>
+              <button className="btn-ghost" onClick={handleReset}>New search</button>
+            </div>
+          </div>
+        )}
+
+        {(loadingAR || annualReport) && (
+          <div style={{ marginBottom: "56px" }}>
+            <h3 className="section-heading">Annual Report Brief</h3>
+
+            {loadingAR && (
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "24px 0" }}>
+                <span className="pulse" style={{ width: "5px", height: "5px", borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />
+                <span className="label">Retrieving annual accounts…</span>
+              </div>
+            )}
+
+            {annualReport && !loadingAR && (
+              <div className="annual-report-box">
+                {!annualReport.found ? (
+                  <p style={{ fontSize: "13px", color: "var(--text-tertiary)", margin: 0 }}>{annualReport.message}</p>
+                ) : annualReport.warning ? (
+                  <div>
+                    <p style={{ fontSize: "13px", color: "var(--text-tertiary)", margin: "0 0 8px 0" }}>{annualReport.message}</p>
+                    <a
+                      className="accent-link"
+                      style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace" }}
+                      href={`https://find-and-update.company-information.service.gov.uk/company/${annualReport.company_number}/filing-history`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      View on Companies House register
+                    </a>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid var(--border)" }}>
+                      <div>
+                        <div className="label" style={{ marginBottom: "4px" }}>Most recent annual accounts</div>
+                        <div style={{ fontSize: "13px", color: "var(--text-secondary)", fontWeight: 500 }}>
+                          {annualReport.type?.toUpperCase()} · Filed {formatDate(annualReport.date || "")}
+                        </div>
+                      </div>
+                      <a
+                        className="accent-link"
+                        style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em", flexShrink: 0, marginLeft: "16px" }}
+                        href={`https://find-and-update.company-information.service.gov.uk/company/${annualReport.company_number}/filing-history`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Full document →
+                      </a>
+                    </div>
+                    {(() => {
+                     const isEmptySummary = annualReport.summary?.toLowerCase().includes("unfortunately");
+
+                      return isEmptySummary ? (
+                        <div style={{ fontSize: "13px", color: "var(--text-tertiary)" }}>
+                          Annual accounts were found but contained insufficient financial narrative to generate a useful brief.{" "}
+                          <a
+                            className="accent-link"
+                            href={`https://find-and-update.company-information.service.gov.uk/company/${annualReport.company_number}/filing-history`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            View full document on Companies House
+                          </a>
+                        </div>
+                      ) : (
+                        renderMarkdown(annualReport.summary || "")
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(loadingFilings || filingsResult) && (
+          <div>
+            <h3 className="section-heading">Recent Statutory Filings</h3>
+
+            {loadingFilings && (
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "24px 0" }}>
+                <span className="pulse" style={{ width: "5px", height: "5px", borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />
+                <span className="label">Retrieving recent filings…</span>
+              </div>
+            )}
+
+            {filingsResult && !loadingFilings && (
+              <>
+                {categories.length > 2 && (
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "28px" }}>
+                    {categories.map(cat => (
+                      <button
+                        key={cat}
+                        className={`btn-tag${activeCategory === cat ? " active" : ""}`}
+                        onClick={() => setActiveCategory(cat)}
+                      >
+                        {cat === "all" ? "All" : (CATEGORY_LABELS[cat] || cat)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
+                  {filteredFilings.map((filing, i) => (
+                    <div
+                      key={i}
+                      className="filing-card"
+                      style={{ opacity: 0, animation: `fadeUp 0.5s ease ${0.05 + i * 0.08}s forwards` }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
+                        <div>
+                          <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "6px", flexWrap: "wrap" }}>
+                            <span className="label">Filing {i + 1}</span>
+                            {filing.category && (
+                              <span className="tag">{CATEGORY_LABELS[filing.category] || filing.category}</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: "14px", color: "var(--text-secondary)", fontWeight: 500, lineHeight: 1.4 }}>
+                            {formatSlug(filing.description)}
+                          </div>
+                        </div>
+                        <div style={{ flexShrink: 0, marginLeft: "20px" }}>
+                          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "11px", color: "var(--text-muted)" }}>
+                            {formatDate(filing.date)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {filing.warning ? (
+                        <div className="warning-box">
+                          <div style={{ marginBottom: "6px" }}>
+                            Limited extractable text — typically a short statutory form or table-based document.
+                          </div>
+                          <a
+                            className="accent-link"
+                            style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px", letterSpacing: "0.08em" }}
+                            href={`https://find-and-update.company-information.service.gov.uk/company/${filingsResult.company_number}/filing-history`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            View on Companies House register
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="summary-box">
+                          {renderMarkdown(filing.summary)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {isIdle && !error && (
+          <div className="fade-up-2 empty-state">
+            <p className="label" style={{ lineHeight: 2.2 }}>
+              Enter any UK registered company name<br />
+              to retrieve filings and generate analyst briefs
+            </p>
+          </div>
+        )}
+      </div>
+
+      <footer style={{ borderTop: "1px solid var(--border)", padding: "20px 40px", display: "flex", justifyContent: "space-between", background: "var(--surface)" }}>
+        <span className="label" style={{ color: "var(--text-muted)" }}>DISCLOSURELENS</span>
+        <span className="label" style={{ color: "var(--text-muted)" }}>COMPANIES HOUSE API · OPEN DATA</span>
+      </footer>
+    </main>
   );
 }
