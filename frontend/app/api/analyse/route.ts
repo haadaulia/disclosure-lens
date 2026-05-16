@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const res = await fetch(
-      `http://localhost:8000/analyse?company_number=${encodeURIComponent(company_number)}&company_name=${encodeURIComponent(company_name)}&count=${count}`
+      `https://disclosure-lens-api.onrender.com/analyse?company_number=${encodeURIComponent(company_number)}&company_name=${encodeURIComponent(company_name)}&count=${count}`
     );
     if (!res.ok) throw new Error("Backend error");
     const data = await res.json();

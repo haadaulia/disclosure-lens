@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   }
 
   const res = await fetch(
-    `http://localhost:8000/filings?company_number=${encodeURIComponent(company_number)}&company_name=${encodeURIComponent(company_name)}&count=${count}`
+    `https://disclosure-lens-api.onrender.com/filings?company_number=${encodeURIComponent(company_number)}&company_name=${encodeURIComponent(company_name)}&count=${count}`
   );
 
   // Pass the stream straight through
