@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const res = await fetch(
-      `http://localhost:8000/search?q=${encodeURIComponent(q)}`
+      `https://disclosure-lens-api.onrender.com/search?q=${encodeURIComponent(q)}`
     );
     if (!res.ok) throw new Error("Backend error");
     const data = await res.json();
