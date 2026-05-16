@@ -162,10 +162,3 @@ async def annual_report(
         "message": "Annual accounts found but text could not be extracted — the document may be a scanned or image-based PDF.",
         "company_number": company_number
     }
-
-# ── Debug ────────────────────────────────────────────
-@app.get("/debug-filings")
-async def debug_filings(request: Request, company_number: str = Query(...)):
-    filings_data = get_filing_history(company_number)
-    items = filings_data.get("items", [])[:20]
-    return [{"type": f.get("type"), "category": f.get("category"), "date": f.get("date"), "description": f.get("description", "")[:50]} for f in items]

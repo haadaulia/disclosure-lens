@@ -64,7 +64,7 @@ body {
 .pulse     { animation: pulseDot 1.2s ease infinite; }
 
 /* ── Layout ── */
-.page-wrap { max-width: 780px; margin: 0 auto; padding: 64px 40px 120px; }
+.page-wrap { max-width: 1100px; margin: 0 auto; padding: 64px 40px 120px; }
 
 /* ── Search input ── */
 .search-input {
