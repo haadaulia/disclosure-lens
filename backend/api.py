@@ -19,7 +19,10 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://disclosure-lens.vercel.app"
+    ],
     allow_methods=["GET"],
     allow_headers=["*"],
 )
