@@ -9,14 +9,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
   }
 
-  try {
-    const res = await fetch(
-      `http://localhost:8000/filings?company_number=${encodeURIComponent(company_number)}&company_name=${encodeURIComponent(company_name)}&count=${count}`
-    );
-    if (!res.ok) throw new Error("Backend error");
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch {
-    return NextResponse.json({ error: "Failed to reach backend" }, { status: 500 });
-  }
+  const res = await fetch(
+    `http://localhost:8000/filings?company_number=${encodeURIComponent(company_number)}&company_name=${encodeURIComponent(company_name)}&count=${count}`
+  );
+
+  // Pass the stream straight through
+  return new NextResponse(res.body, {
+    headers: { "Content-Type": "text/plain" },
+  });
 }

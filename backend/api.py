@@ -1,10 +1,11 @@
 import re
+import json
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi.responses import JSONResponse
 from companies_house import search_company, get_filing_history, get_document, get_document_text
 from summariser import summarise_filing, summarise_annual_report
 
@@ -43,7 +44,7 @@ async def search(request: Request, q: str = Query(..., max_length=100)):
         })
     return {"companies": companies}
 
-# ── Recent filings ───────────────────────────────────
+# ── Recent filings (streaming) ───────────────────────
 @app.get("/filings")
 @limiter.limit("10/minute")
 async def filings(
@@ -56,48 +57,61 @@ async def filings(
     if not company_number:
         return JSONResponse(status_code=400, content={"error": "Invalid company number"})
 
-    filings_data = get_filing_history(company_number)
-    all_items = [
-        f for f in filings_data.get("items", [])
-        if f.get("category", "") != "accounts"
-    ][:count * 2]
+    def generate():
+        # Send header first
+        yield json.dumps({
+            "type": "header",
+            "company": company_name,
+            "company_number": company_number
+        }) + "\n"
 
-    results = []
-    for filing in all_items:
-        if len(results) >= count:
-            break
-        try:
-            doc = get_document(filing)
-            if not doc:
-                continue
-            text = get_document_text(doc)
-            if len(text.strip()) < 200:
-                results.append({
+        filings_data = get_filing_history(company_number)
+        all_items = [
+            f for f in filings_data.get("items", [])
+            if f.get("category", "") != "accounts"
+        ][:count * 2]
+
+        sent = 0
+        for filing in all_items:
+            if sent >= count:
+                break
+            try:
+                doc = get_document(filing)
+                if not doc:
+                    continue
+                text = get_document_text(doc)
+
+                if len(text.strip()) < 200:
+                    yield json.dumps({
+                        "type": "filing",
+                        "date": filing.get("date", ""),
+                        "description": filing.get("description", ""),
+                        "category": filing.get("category", ""),
+                        "type_code": filing.get("type", ""),
+                        "summary": "",
+                        "warning": True
+                    }) + "\n"
+                    sent += 1
+                    continue
+
+                summary = summarise_filing(text, company_name)
+                yield json.dumps({
+                    "type": "filing",
                     "date": filing.get("date", ""),
                     "description": filing.get("description", ""),
                     "category": filing.get("category", ""),
-                    "type": filing.get("type", ""),
-                    "summary": "",
-                    "warning": True
-                })
-                continue
-            summary = summarise_filing(text, company_name)
-            results.append({
-                "date": filing.get("date", ""),
-                "description": filing.get("description", ""),
-                "category": filing.get("category", ""),
-                "type": filing.get("type", ""),
-                "summary": summary,
-                "warning": False
-            })
-        except Exception:
-            continue
+                    "type_code": filing.get("type", ""),
+                    "summary": summary,
+                    "warning": False
+                }) + "\n"
+                sent += 1
 
-    return {
-        "company": company_name,
-        "company_number": company_number,
-        "filings": results
-    }
+            except Exception:
+                continue
+
+        yield json.dumps({"type": "done"}) + "\n"
+
+    return StreamingResponse(generate(), media_type="text/plain")
 
 # ── Annual report ────────────────────────────────────
 @app.get("/annual-report")
@@ -140,12 +154,18 @@ async def annual_report(
         except Exception:
             continue
 
-    # None of the account filings had extractable text
     return {
         "found": True,
         "date": aa_filings[0].get("date", "") if aa_filings else "",
         "summary": None,
         "warning": True,
-        "message": "Annual accounts found but text could not be extracted, the document may be a scanned or image-based PDF.",
+        "message": "Annual accounts found but text could not be extracted — the document may be a scanned or image-based PDF.",
         "company_number": company_number
     }
+
+# ── Debug ────────────────────────────────────────────
+@app.get("/debug-filings")
+async def debug_filings(request: Request, company_number: str = Query(...)):
+    filings_data = get_filing_history(company_number)
+    items = filings_data.get("items", [])[:20]
+    return [{"type": f.get("type"), "category": f.get("category"), "date": f.get("date"), "description": f.get("description", "")[:50]} for f in items]
