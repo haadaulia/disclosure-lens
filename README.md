@@ -1,5 +1,7 @@
 # DisclosureLens
 
+**Live: [disclosure-lens.vercel.app](https://disclosure-lens.vercel.app)**
+
 AI-powered UK company disclosure analyser. Search any UK registered company, get structured analyst briefs generated from live Companies House filings — including a dedicated annual report brief and recent statutory activity.
 
 Built with Next.js, Python, FastAPI, the Companies House REST API, and Groq (LLaMA 3.1).
@@ -202,7 +204,7 @@ Both branches run in parallel. Results appear as they complete.
 - [x] Rate limiting and input sanitisation
 - [ ] Demo mode with cached sample filings (no API keys required)
 - [ ] Side-by-side company comparison
-- [ ] Deploy (Vercel + Railway)
+- [x] Deploy — [disclosure-lens.vercel.app](https://disclosure-lens.vercel.app) (Vercel + Render)
 
 ---
 
